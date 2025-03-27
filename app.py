@@ -10,23 +10,8 @@ from duckduckgo_search import DDGS
 st.set_page_config(
     page_title="Financial Analysis AI Agent",
     page_icon="💹",
-    layout="centered"
+    layout="wide"
 )
-
-# Custom CSS for center alignment
-st.markdown("""
-    <style>
-    .reportview-container .main .block-container {
-        text-align: center;
-    }
-    .stTextInput > div > div > input {
-        text-align: center;
-    }
-    .stSelectbox > div > div > div {
-        text-align: center;
-    }
-    </style>
-""", unsafe_allow_html=True)
 
 # Initialize Groq Client
 def get_groq_client():
@@ -138,68 +123,66 @@ def main():
     st.title("🚀 Advanced Financial Insight AI")
     st.markdown("Comprehensive stock analysis with DuckDuckGo news search")
 
-    # Center columns for inputs
-    col1, col2, col3 = st.columns([1,2,1])
+    # Sidebar Configuration
+    st.sidebar.header("🔍 Stock Analysis")
     
-    with col2:
-        # Stock Symbol Input
-        stock_symbol = st.text_input(
-            "Enter Stock Symbol", 
-            value="NVDA", 
-            help="Enter a valid stock ticker (e.g., AAPL, GOOGL)"
-        )
+    # Stock Symbol Input
+    stock_symbol = st.sidebar.text_input(
+        "Enter Stock Symbol", 
+        value="NVDA", 
+        help="Enter a valid stock ticker (e.g., AAPL, GOOGL)"
+    )
 
-        # Analysis Type Selection
-        query_type = st.selectbox(
-            "Select Analysis Type",
-            [
-                "Comprehensive Analysis",
-                "Analyst Recommendations",
-                "Latest News Analysis"
-            ]
-        )
+    # Analysis Type Selection
+    query_type = st.sidebar.selectbox(
+        "Select Analysis Type",
+        [
+            "Comprehensive Analysis",
+            "Analyst Recommendations",
+            "Latest News Analysis"
+        ]
+    )
 
-        # Generate Analysis Button
-        if st.button("Generate Analysis"):
-            with st.spinner("Fetching and analyzing stock data..."):
-                try:
-                    # Fetch Stock Information
-                    stock_info = get_stock_info(stock_symbol)
-                    
-                    if stock_info:
-                        # Display Stock Information
-                        st.subheader(f"Financial Snapshot: {stock_symbol}")
-                        info_df = pd.DataFrame.from_dict(stock_info, orient='index', columns=['Value'])
-                        st.table(info_df)
-                    
-                    # Fetch News via DuckDuckGo
-                    real_time_news = get_duckduckgo_news(stock_symbol)
-                    
-                    # Display News
-                    st.subheader("📰 Latest News")
-                    for news in real_time_news:
-                        st.markdown(f"**{news['title']}**")
-                        st.markdown(f"*Source: {news['publisher']}*")
-                        st.markdown(f"[Read more]({news['link']})")
-                        st.markdown("---")
-                    
-                    # Generate AI Analysis
-                    ai_analysis = generate_ai_analysis(stock_info, real_time_news, query_type)
-                    
-                    # Display AI Analysis
-                    st.subheader("🤖 AI-Powered Insights")
-                    st.write(ai_analysis)
-                    
-                except Exception as e:
-                    st.error(f"An error occurred: {e}")
+    # Generate Analysis Button
+    if st.sidebar.button("Generate Analysis"):
+        with st.spinner("Fetching and analyzing stock data..."):
+            try:
+                # Fetch Stock Information
+                stock_info = get_stock_info(stock_symbol)
+                
+                if stock_info:
+                    # Display Stock Information
+                    st.subheader(f"Financial Snapshot: {stock_symbol}")
+                    info_df = pd.DataFrame.from_dict(stock_info, orient='index', columns=['Value'])
+                    st.table(info_df)
+                
+                # Fetch News via DuckDuckGo
+                real_time_news = get_duckduckgo_news(stock_symbol)
+                
+                # Display News
+                st.subheader("📰 Latest News")
+                for news in real_time_news:
+                    st.markdown(f"**{news['title']}**")
+                    st.markdown(f"*Source: {news['publisher']}*")
+                    st.markdown(f"[Read more]({news['link']})")
+                    st.markdown("---")
+                
+                # Generate AI Analysis
+                ai_analysis = generate_ai_analysis(stock_info, real_time_news, query_type)
+                
+                # Display AI Analysis
+                st.subheader("🤖 AI-Powered Insights")
+                st.write(ai_analysis)
+                
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
 
     # Disclaimer
-    st.markdown("<div style='text-align: center; margin-top: 20px;'>", unsafe_allow_html=True)
-    st.warning(
+    st.sidebar.markdown("---")
+    st.sidebar.warning(
         "🚨 Disclaimer: This is an AI-generated analysis. "
         "Always consult with a financial advisor before making investment decisions."
     )
-    st.markdown("</div>", unsafe_allow_html=True)
 
 # Run the Streamlit app
 if __name__ == "__main__":
