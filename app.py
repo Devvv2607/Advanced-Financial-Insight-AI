@@ -1,7 +1,7 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import plotly.graph_objs as plt
+import plotly.graph_objs as go
 from groq import Groq
 import os
 import traceback
