@@ -1,10 +1,14 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import plotly.graph_objs as plt
 from groq import Groq
 import os
-import requests
+from dotenv import load_dotenv
 from duckduckgo_search import DDGS
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Streamlit App Configuration
 st.set_page_config(
@@ -16,11 +20,11 @@ st.set_page_config(
 # Initialize Groq Client
 def get_groq_client():
     try:
-        # Try to get API key from Hugging Face secrets first
-        groq_api_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
+        # Try to get API key from environment variables
+        groq_api_key = os.getenv("GROQ_API_KEY")
         
         if not groq_api_key:
-            st.error("Groq API Key is missing. Please set it in Secrets or .env file.")
+            st.error("Groq API Key is missing. Please set GROQ_API_KEY in your .env file.")
             return None
         
         return Groq(api_key=groq_api_key)
@@ -52,6 +56,74 @@ def get_stock_info(symbol):
         return stock_data
     except Exception as e:
         st.error(f"Error fetching stock information: {e}")
+        return None
+
+# Fetch Historical Stock Data and Calculate Volatility
+def get_stock_volatility(symbol, period='1y'):
+    try:
+        # Download historical stock data
+        stock_data = yf.download(symbol, period=period)
+        
+        if stock_data.empty:
+            st.error(f"No historical data found for {symbol}")
+            return None
+        
+        # Calculate daily returns
+        stock_data['Daily Returns'] = stock_data['Close'].pct_change()
+        
+        # Calculate rolling volatility (30-day standard deviation of returns)
+        stock_data['Rolling Volatility'] = stock_data['Daily Returns'].rolling(window=30).std() * (252 ** 0.5)  # Annualized
+        
+        return stock_data
+    except Exception as e:
+        st.error(f"Error fetching historical stock data: {e}")
+        return None
+
+# Create Volatility Visualization
+def create_volatility_chart(stock_data):
+    try:
+        # Create figure with two y-axes
+        fig = plt.Figure()
+        
+        # Price line
+        fig.add_trace(
+            plt.Scatter(
+                x=stock_data.index, 
+                y=stock_data['Close'], 
+                name='Stock Price', 
+                line=dict(color='blue'),
+                yaxis='y1'
+            )
+        )
+        
+        # Volatility line
+        fig.add_trace(
+            plt.Scatter(
+                x=stock_data.index, 
+                y=stock_data['Rolling Volatility'], 
+                name='30-Day Volatility', 
+                line=dict(color='red'),
+                yaxis='y2'
+            )
+        )
+        
+        # Layout configuration
+        fig.update_layout(
+            title=f'Stock Price and Volatility',
+            xaxis_title='Date',
+            yaxis_title='Stock Price',
+            yaxis2=dict(
+                title='Annualized Volatility',
+                overlaying='y',
+                side='right'
+            ),
+            height=600,
+            legend=dict(x=0, y=1.1, orientation='h')
+        )
+        
+        return fig
+    except Exception as e:
+        st.error(f"Error creating volatility chart: {e}")
         return None
 
 # Fetch News Using DuckDuckGo
@@ -155,6 +227,14 @@ def main():
                     st.subheader(f"Financial Snapshot: {stock_symbol}")
                     info_df = pd.DataFrame.from_dict(stock_info, orient='index', columns=['Value'])
                     st.table(info_df)
+                
+                # Fetch and Display Volatility Chart
+                volatility_data = get_stock_volatility(stock_symbol)
+                if volatility_data is not None:
+                    # Create and Display Volatility Chart
+                    st.subheader("📊 Stock Price and Volatility")
+                    volatility_chart = create_volatility_chart(volatility_data)
+                    st.plotly_chart(volatility_chart, use_container_width=True)
                 
                 # Fetch News via DuckDuckGo
                 real_time_news = get_duckduckgo_news(stock_symbol)
