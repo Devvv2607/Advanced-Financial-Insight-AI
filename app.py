@@ -1,387 +1,251 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
+import numpy as np
+import yfinance as yf
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta
-import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, LSTM
+import matplotlib.pyplot as plt
 
 # Page configuration
-st.set_page_config(
-    page_title="Advanced Financial Insight AI",
-    page_icon="📈",
-    layout="wide"
-)
+st.set_page_config(page_title="Advanced Financial Insight AI", layout="wide")
 
-# App title and description
-st.title("📊 Advanced Financial Insight AI")
-st.markdown("Analyze stock performance, volatility, and financial metrics with AI-powered insights.")
+# Title and description
+st.title("Advanced Financial Insight AI")
+st.markdown("Analyze stocks with AI-powered insights and predictions")
 
-# Sidebar for user inputs
-with st.sidebar:
-    st.header("Stock Selection")
-    ticker = st.text_input("Enter Stock Ticker Symbol (e.g., AAPL, MSFT, NVDA):", "AAPL").upper()
-    
-    st.header("Time Period")
-    period_options = ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]
-    period = st.selectbox("Select Time Period:", period_options, index=3)
-    
-    st.header("Analysis Options")
-    show_volatility = st.checkbox("Show Volatility Analysis", value=True)
-    show_volume = st.checkbox("Show Volume Analysis", value=True)
-    show_financial_metrics = st.checkbox("Show Financial Metrics", value=True)
-    show_earnings = st.checkbox("Show Earnings Data", value=True)
+# Sidebar for inputs
+st.sidebar.header("Stock Selection")
+ticker = st.sidebar.text_input("Enter Stock Ticker Symbol (e.g., AAPL, MSFT, GOOGL)", "AAPL")
+period_options = ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]
+period = st.sidebar.selectbox("Select Time Period", period_options, index=3)
 
-# Function to get stock data
-@st.cache_data(ttl=3600)
+# Function to fetch stock data with proper caching
+@st.cache_data(ttl=3600)  # Using modern cache_data with TTL of 1 hour
 def get_stock_data(ticker, period):
+    """Fetch stock data using yfinance with proper serialization"""
     try:
+        # Create ticker object
         stock = yf.Ticker(ticker)
+        
+        # Get historical data (DataFrame is serializable)
         data = stock.history(period=period)
-        info = stock.info
-        return data, stock, info
+        
+        # Extract only necessary information into serializable dictionaries
+        info_dict = {}
+        for key in ['shortName', 'sector', 'industry', 'marketCap', 'trailingPE', 
+                   'forwardPE', 'dividendYield', 'beta', '52WeekChange']:
+            if key in stock.info:
+                info_dict[key] = stock.info[key]
+        
+        return data, stock, info_dict
     except Exception as e:
-        st.error(f"Error fetching data: {e}")
-        return None, None, None
+        st.error(f"Error fetching data for {ticker}: {str(e)}")
+        return pd.DataFrame(), None, {}
 
-# Main function to fetch data
-data, stock, info = get_stock_data(ticker, period)
-
-if data is not None and not data.empty:
-    # Show basic stock info
-    col1, col2, col3 = st.columns(3)
+# Main function
+def main():
+    # Load data
+    with st.spinner("Fetching stock data..."):
+        data, stock, info = get_stock_data(ticker, period)
     
-    try:
-        with col1:
-            st.metric("Current Price", f"${data['Close'].iloc[-1]:.2f}", 
-                     f"{((data['Close'].iloc[-1] - data['Close'].iloc[-2]) / data['Close'].iloc[-2] * 100):.2f}%")
-        with col2:
-            st.metric("52-Week High", f"${info.get('fiftyTwoWeekHigh', 'N/A')}", "")
-        with col3:
-            st.metric("52-Week Low", f"${info.get('fiftyTwoWeekLow', 'N/A')}", "")
-    except Exception as e:
-        st.warning(f"Could not display some metrics: {e}")
+    if data.empty:
+        st.error("No data available. Please check the ticker symbol and try again.")
+        return
     
-    # Basic info table
-    col1, col2 = st.columns(2)
+    # Display company info and current metrics
+    col1, col2 = st.columns([2, 3])
     
     with col1:
-        st.subheader("Company Information")
-        info_data = {
-            "Name": info.get('longName', ticker),
-            "Sector": info.get('sector', 'N/A'),
-            "Industry": info.get('industry', 'N/A'),
-            "Market Cap": f"${info.get('marketCap', 0)/1000000000:.2f}B" if info.get('marketCap') else 'N/A',
-            "P/E Ratio": f"{info.get('trailingPE', 'N/A')}",
-            "Dividend Yield": f"{info.get('dividendYield', 0) * 100:.2f}%" if info.get('dividendYield') else 'N/A',
-        }
-        
-        st.table(pd.DataFrame(list(info_data.items()), columns=['Metric', 'Value']))
+        st.subheader("Company Overview")
+        if 'shortName' in info:
+            st.write(f"**Name:** {info.get('shortName', 'N/A')}")
+        if 'sector' in info:
+            st.write(f"**Sector:** {info.get('sector', 'N/A')}")
+        if 'industry' in info:
+            st.write(f"**Industry:** {info.get('industry', 'N/A')}")
+        if 'marketCap' in info:
+            market_cap = info.get('marketCap', 0)
+            st.write(f"**Market Cap:** ${market_cap:,.0f}")
+        if 'beta' in info:
+            st.write(f"**Beta:** {info.get('beta', 'N/A'):.2f}")
+        if 'trailingPE' in info:
+            st.write(f"**Trailing P/E:** {info.get('trailingPE', 'N/A'):.2f}")
+        if 'forwardPE' in info:
+            st.write(f"**Forward P/E:** {info.get('forwardPE', 'N/A'):.2f}")
+        if 'dividendYield' in info:
+            dividend_yield = info.get('dividendYield', 0)
+            if dividend_yield:
+                st.write(f"**Dividend Yield:** {dividend_yield:.2%}")
     
-    # Stock price chart
-    st.subheader("📈 Stock Price History")
+    with col2:
+        st.subheader("Price Chart")
+        fig = go.Figure()
+        fig.add_trace(go.Candlestick(
+            x=data.index,
+            open=data['Open'],
+            high=data['High'],
+            low=data['Low'],
+            close=data['Close'],
+            name='Candlestick'
+        ))
+        fig.update_layout(
+            title=f"{ticker} Stock Price",
+            xaxis_title="Date",
+            yaxis_title="Price (USD)",
+            height=400,
+            xaxis_rangeslider_visible=False
+        )
+        st.plotly_chart(fig, use_container_width=True)
     
-    # Create Plotly figure for stock price
-    fig = go.Figure()
+    # Technical Analysis
+    st.subheader("Technical Analysis")
     
-    fig.add_trace(go.Scatter(
-        x=data.index,
-        y=data['Close'],
-        mode='lines',
-        name='Close Price',
-        line=dict(color='rgba(0, 128, 0, 0.8)', width=2)
-    ))
-    
-    # Add moving averages
+    # Calculate moving averages
     data['MA20'] = data['Close'].rolling(window=20).mean()
     data['MA50'] = data['Close'].rolling(window=50).mean()
     data['MA200'] = data['Close'].rolling(window=200).mean()
     
-    fig.add_trace(go.Scatter(x=data.index, y=data['MA20'], mode='lines', name='20-Day MA', line=dict(color='blue', width=1)))
-    fig.add_trace(go.Scatter(x=data.index, y=data['MA50'], mode='lines', name='50-Day MA', line=dict(color='orange', width=1)))
-    fig.add_trace(go.Scatter(x=data.index, y=data['MA200'], mode='lines', name='200-Day MA', line=dict(color='red', width=1)))
+    # RSI calculation
+    delta = data['Close'].diff()
+    gain = delta.where(delta > 0, 0).rolling(window=14).mean()
+    loss = -delta.where(delta < 0, 0).rolling(window=14).mean()
+    rs = gain / loss
+    data['RSI'] = 100 - (100 / (1 + rs))
     
-    fig.update_layout(
-        title=f"{info.get('longName', ticker)} Stock Price",
-        xaxis_title="Date",
-        yaxis_title="Price (USD)",
-        hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        template="plotly_dark"
-    )
+    # MACD
+    data['EMA12'] = data['Close'].ewm(span=12, adjust=False).mean()
+    data['EMA26'] = data['Close'].ewm(span=26, adjust=False).mean()
+    data['MACD'] = data['EMA12'] - data['EMA26']
+    data['Signal'] = data['MACD'].ewm(span=9, adjust=False).mean()
     
-    st.plotly_chart(fig, use_container_width=True)
+    # Display technical indicators
+    tab1, tab2, tab3 = st.tabs(["Moving Averages", "RSI", "MACD"])
     
-    # Volatility Analysis
-    if show_volatility:
-        st.subheader("📊 Stock Price and Volatility")
-        
-        try:
-            # Calculate daily returns
-            data['Daily_Return'] = data['Close'].pct_change() * 100
+    with tab1:
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Close'))
+        fig.add_trace(go.Scatter(x=data.index, y=data['MA20'], mode='lines', name='MA20'))
+        fig.add_trace(go.Scatter(x=data.index, y=data['MA50'], mode='lines', name='MA50'))
+        fig.add_trace(go.Scatter(x=data.index, y=data['MA200'], mode='lines', name='MA200'))
+        fig.update_layout(title="Moving Averages", height=500)
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with tab2:
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=data.index, y=data['RSI'], mode='lines', name='RSI'))
+        fig.add_shape(type="line", x0=data.index[0], y0=30, x1=data.index[-1], y1=30,
+                    line=dict(color="green", width=2, dash="dash"))
+        fig.add_shape(type="line", x0=data.index[0], y0=70, x1=data.index[-1], y1=70,
+                    line=dict(color="red", width=2, dash="dash"))
+        fig.update_layout(title="Relative Strength Index", height=500)
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with tab3:
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=data.index, y=data['MACD'], mode='lines', name='MACD'))
+        fig.add_trace(go.Scatter(x=data.index, y=data['Signal'], mode='lines', name='Signal'))
+        fig.update_layout(title="MACD", height=500)
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # LSTM Prediction
+    st.subheader("AI Price Prediction (LSTM Model)")
+    
+    # Prepare data for prediction
+    prediction_days = 60  # Number of days to look back
+    
+    # Get the latest data
+    df = data[['Close']].copy()
+    
+    # Scale the data
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaled_data = scaler.fit_transform(df)
+    
+    # Create training dataset
+    x_train = []
+    y_train = []
+    
+    for i in range(prediction_days, len(scaled_data)):
+        x_train.append(scaled_data[i-prediction_days:i, 0])
+        y_train.append(scaled_data[i, 0])
+    
+    # Convert to numpy arrays
+    x_train, y_train = np.array(x_train), np.array(y_train)
+    x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
+    
+    # Check if we have enough data
+    if len(x_train) > 0:
+        with st.spinner("Training AI model (this may take a moment)..."):
+            # Build the LSTM model
+            model = Sequential()
+            model.add(LSTM(units=50, return_sequences=True, input_shape=(x_train.shape[1], 1)))
+            model.add(LSTM(units=50, return_sequences=False))
+            model.add(Dense(units=25))
+            model.add(Dense(units=1))
             
-            # Calculate volatility (20-day rolling standard deviation of returns)
-            data['Volatility'] = data['Daily_Return'].rolling(window=20).std() * np.sqrt(252) * 100
+            # Compile the model
+            model.compile(optimizer='adam', loss='mean_squared_error')
             
-            # Create volatility chart
-            vol_fig = go.Figure()
+            # Train the model (with a small number of epochs for demo)
+            model.fit(x_train, y_train, batch_size=32, epochs=1, verbose=0)
             
-            vol_fig.add_trace(go.Scatter(
-                x=data.index,
-                y=data['Volatility'],
-                mode='lines',
-                name='Volatility (Annualized)',
-                line=dict(color='red', width=2)
-            ))
+            # Predict future prices
+            future_days = 30
             
-            vol_fig.update_layout(
-                title=f"{ticker} Volatility (20-Day Rolling)",
+            # Create test dataset
+            test_data = scaled_data[-prediction_days:]
+            x_test = []
+            x_test.append(test_data)
+            x_test = np.array(x_test)
+            x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
+            
+            # Initialize predictions array
+            predictions = []
+            
+            # Predict next 'future_days' days
+            current_batch = x_test[0]
+            for _ in range(future_days):
+                current_pred = model.predict(np.array([current_batch]), verbose=0)[0]
+                predictions.append(current_pred[0])
+                # Update batch for next prediction
+                current_batch = np.append(current_batch[1:], current_pred)
+                current_batch = current_batch.reshape(prediction_days, 1)
+            
+            # Inverse transform predictions
+            predictions = scaler.inverse_transform(np.array(predictions).reshape(-1, 1))
+            
+            # Create future dates
+            last_date = data.index[-1]
+            future_dates = pd.date_range(start=last_date + timedelta(days=1), periods=future_days)
+            
+            # Create and display prediction chart
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=data.index[-100:], y=data['Close'][-100:], mode='lines', name='Historical'))
+            fig.add_trace(go.Scatter(x=future_dates, y=predictions.flatten(), mode='lines', name='Prediction', line=dict(dash='dash')))
+            fig.update_layout(
+                title=f"{ticker} Price Prediction (Next {future_days} Days)",
                 xaxis_title="Date",
-                yaxis_title="Volatility (%)",
-                hovermode="x unified",
-                template="plotly_dark"
+                yaxis_title="Price (USD)",
+                height=500
             )
+            st.plotly_chart(fig, use_container_width=True)
             
-            st.plotly_chart(vol_fig, use_container_width=True)
+            # Display prediction metrics
+            current_price = data['Close'].iloc[-1]
+            last_prediction = predictions[-1][0]
+            percent_change = ((last_prediction - current_price) / current_price) * 100
             
-            # Calculate drawdowns
-            data['Cumulative_Return'] = (1 + data['Daily_Return'] / 100).cumprod()
-            data['Rolling_Max'] = data['Cumulative_Return'].cummax()
-            data['Drawdown'] = (data['Cumulative_Return'] / data['Rolling_Max'] - 1) * 100
-            
-            # Create drawdown chart
-            dd_fig = go.Figure()
-            
-            dd_fig.add_trace(go.Scatter(
-                x=data.index,
-                y=data['Drawdown'],
-                mode='lines',
-                name='Drawdown',
-                line=dict(color='firebrick', width=2),
-                fill='tozeroy',
-                fillcolor='rgba(178, 34, 34, 0.3)'
-            ))
-            
-            dd_fig.update_layout(
-                title=f"{ticker} Drawdown Analysis",
-                xaxis_title="Date",
-                yaxis_title="Drawdown (%)",
-                hovermode="x unified",
-                template="plotly_dark",
-                yaxis=dict(range=[data['Drawdown'].min() * 1.1, 5])
-            )
-            
-            st.plotly_chart(dd_fig, use_container_width=True)
-            
-            # Risk metrics
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Annualized Volatility", f"{data['Volatility'].dropna().mean():.2f}%")
-            with col2:
-                st.metric("Max Drawdown", f"{data['Drawdown'].min():.2f}%")
-            with col3:
-                sharpe = data['Daily_Return'].mean() / data['Daily_Return'].std() * np.sqrt(252)
-                st.metric("Sharpe Ratio", f"{sharpe:.2f}")
-            with col4:
-                sortino = data['Daily_Return'].mean() / data.loc[data['Daily_Return'] < 0, 'Daily_Return'].std() * np.sqrt(252)
-                st.metric("Sortino Ratio", f"{sortino:.2f}")
-            
-        except Exception as e:
-            st.error(f"Error creating volatility chart: {str(e)}")
-    
-    # Volume Analysis
-    if show_volume:
-        st.subheader("🔄 Trading Volume Analysis")
-        
-        try:
-            # Volume chart
-            vol_chart = go.Figure()
-            
-            vol_chart.add_trace(go.Bar(
-                x=data.index,
-                y=data['Volume'],
-                name='Volume',
-                marker=dict(color='rgba(58, 71, 80, 0.8)')
-            ))
-            
-            vol_chart.update_layout(
-                title=f"{ticker} Trading Volume",
-                xaxis_title="Date",
-                yaxis_title="Volume",
-                hovermode="x unified",
-                template="plotly_dark"
-            )
-            
-            # Calculate 20-day average volume
-            data['Volume_MA20'] = data['Volume'].rolling(window=20).mean()
-            
-            vol_chart.add_trace(go.Scatter(
-                x=data.index,
-                y=data['Volume_MA20'],
-                mode='lines',
-                name='20-Day Average Volume',
-                line=dict(color='orange', width=2)
-            ))
-            
-            st.plotly_chart(vol_chart, use_container_width=True)
-            
-            # Volume metrics
             col1, col2, col3 = st.columns(3)
+            col1.metric("Current Price", f"${current_price:.2f}")
+            col2.metric("Predicted Price (30 days)", f"${last_prediction:.2f}")
+            col3.metric("Predicted Change", f"{percent_change:.2f}%", f"{percent_change:.2f}%")
             
-            with col1:
-                st.metric("Average Daily Volume", f"{data['Volume'].mean():,.0f}")
-            with col2:
-                st.metric("Recent Volume Trend", 
-                        f"{(data['Volume'].iloc[-5:].mean() / data['Volume'].iloc[-20:-5].mean() - 1) * 100:.2f}%",
-                        f"{(data['Volume'].iloc[-5:].mean() - data['Volume'].iloc[-20:-5].mean()):,.0f}")
-            with col3:
-                st.metric("Volume Volatility", f"{data['Volume'].pct_change().std() * 100:.2f}%")
-            
-        except Exception as e:
-            st.error(f"Error creating volume chart: {str(e)}")
-    
-    # Financial Metrics
-    if show_financial_metrics:
-        st.subheader("💰 Key Financial Metrics")
-        
-        try:
-            # Get financial data
-            balance_sheet = stock.balance_sheet
-            income_stmt = stock.income_stmt
-            cash_flow = stock.cashflow
-            
-            if not balance_sheet.empty and not income_stmt.empty:
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.subheader("Income Statement Metrics")
-                    
-                    # Extract and display income statement metrics
-                    if "Total Revenue" in income_stmt.index:
-                        revenue = income_stmt.loc["Total Revenue"].iloc[0]
-                        rev_growth = (income_stmt.loc["Total Revenue"].iloc[0] / income_stmt.loc["Total Revenue"].iloc[1] - 1) * 100 if len(income_stmt.columns) > 1 else 0
-                        st.metric("Revenue (TTM)", f"${revenue/1000000000:.2f}B", f"{rev_growth:.2f}% YoY")
-                    
-                    if "Net Income" in income_stmt.index:
-                        net_income = income_stmt.loc["Net Income"].iloc[0]
-                        ni_growth = (income_stmt.loc["Net Income"].iloc[0] / income_stmt.loc["Net Income"].iloc[1] - 1) * 100 if len(income_stmt.columns) > 1 else 0
-                        st.metric("Net Income (TTM)", f"${net_income/1000000000:.2f}B", f"{ni_growth:.2f}% YoY")
-                    
-                    if "EBITDA" in income_stmt.index:
-                        ebitda = income_stmt.loc["EBITDA"].iloc[0]
-                        st.metric("EBITDA (TTM)", f"${ebitda/1000000000:.2f}B")
-                    
-                    if "Total Revenue" in income_stmt.index and "Net Income" in income_stmt.index:
-                        profit_margin = net_income / revenue * 100
-                        st.metric("Profit Margin", f"{profit_margin:.2f}%")
-                
-                with col2:
-                    st.subheader("Balance Sheet Metrics")
-                    
-                    # Extract and display balance sheet metrics
-                    if "Total Assets" in balance_sheet.index:
-                        assets = balance_sheet.loc["Total Assets"].iloc[0]
-                        st.metric("Total Assets", f"${assets/1000000000:.2f}B")
-                    
-                    if "Total Debt" in balance_sheet.index:
-                        debt = balance_sheet.loc["Total Debt"].iloc[0]
-                        st.metric("Total Debt", f"${debt/1000000000:.2f}B")
-                    
-                    if "Total Assets" in balance_sheet.index and "Total Debt" in balance_sheet.index:
-                        debt_to_assets = debt / assets * 100
-                        st.metric("Debt-to-Assets Ratio", f"{debt_to_assets:.2f}%")
-                    
-                    if "Total Cash" in balance_sheet.index:
-                        cash = balance_sheet.loc["Total Cash"].iloc[0]
-                        st.metric("Cash & Equivalents", f"${cash/1000000000:.2f}B")
-            else:
-                st.warning("No financial data available for this stock.")
-            
-        except Exception as e:
-            st.error(f"Error retrieving financial metrics: {str(e)}")
-    
-    # Earnings Analysis
-    if show_earnings:
-        st.subheader("📝 Earnings Analysis")
-        
-        try:
-            # Get earnings data
-            earnings = stock.earnings
-            
-            if not earnings.empty:
-                # Display earnings table
-                st.subheader("Historical Earnings")
-                st.dataframe(earnings)
-                
-                # Create earnings chart
-                fig = go.Figure()
-                
-                fig.add_trace(go.Bar(
-                    x=earnings.index,
-                    y=earnings['Revenue'],
-                    name='Revenue',
-                    marker_color='rgb(55, 83, 109)'
-                ))
-                
-                fig.add_trace(go.Bar(
-                    x=earnings.index,
-                    y=earnings['Earnings'],
-                    name='Earnings',
-                    marker_color='rgb(26, 118, 255)'
-                ))
-                
-                fig.update_layout(
-                    title=f"{ticker} Historical Earnings",
-                    xaxis_title="Year",
-                    yaxis_title="Amount (USD)",
-                    barmode='group',
-                    hovermode="x unified",
-                    template="plotly_dark"
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # Get earnings calendar
-                earnings_calendar = stock.calendar
-                
-                if earnings_calendar:
-                    st.subheader("Upcoming Earnings Date")
-                    next_earnings = earnings_calendar.get('Earnings Date', 'No upcoming earnings date found')
-                    
-                    if isinstance(next_earnings, datetime):
-                        days_until = (next_earnings - datetime.now()).days
-                        st.info(f"Next Earnings Date: {next_earnings.strftime('%B %d, %Y')} ({days_until} days from now)")
-                    else:
-                        st.info("No upcoming earnings date found")
-            else:
-                st.warning("No earnings data found for NVDA")
-                
-        except Exception as e:
-            st.error(f"Error retrieving earnings data: {str(e)}")
-    
-    # Final section - Summary and AI Analysis
-    st.subheader("💡 Market Summary")
-    market_summary = f"""
-    **{info.get('longName', ticker)} ({ticker})** is currently trading at **${data['Close'].iloc[-1]:.2f}**. 
-    
-    The stock has moved {(data['Close'].iloc[-1] / data['Close'].iloc[0] - 1) * 100:.2f}% over the selected period.
-    
-    **Key Observations:**
-    - Average daily volume: {data['Volume'].mean():,.0f} shares
-    - Current volatility: {data['Volatility'].dropna().iloc[-1]:.2f}%
-    - Maximum drawdown: {data['Drawdown'].min():.2f}%
-    
-    Based on technical indicators, the stock is currently trading 
-    {('above' if data['Close'].iloc[-1] > data['MA50'].iloc[-1] else 'below')} its 50-day moving average and
-    {('above' if data['Close'].iloc[-1] > data['MA200'].iloc[-1] else 'below')} its 200-day moving average.
-    """
-    
-    st.markdown(market_summary)
+            st.caption("⚠️ Disclaimer: This prediction is for demonstration purposes only. Financial markets are complex and predictions may not be accurate.")
+    else:
+        st.warning("Not enough data for prediction. Please select a longer time period.")
 
-else:
-    st.error(f"Could not retrieve data for ticker: {ticker}. Please check if the symbol is correct.")
-
-# Footer
-st.markdown("---")
-st.caption("Disclaimer: This app is for informational purposes only and does not constitute investment advice.")
+if __name__ == "__main__":
+    main()
