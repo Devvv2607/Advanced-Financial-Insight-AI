@@ -6,4 +6,4 @@ pandas
 python-dotenv
 groq
 duckduckgo-search
-ploty
+plotly==5.14.0
