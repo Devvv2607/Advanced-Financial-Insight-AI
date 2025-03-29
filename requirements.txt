@@ -7,4 +7,4 @@ python-dotenv
 groq
 duckduckgo-search
 plotly==5.14.0
-matplotlib
+numpy
