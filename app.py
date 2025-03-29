@@ -7,6 +7,7 @@ import os
 import traceback
 from dotenv import load_dotenv
 from duckduckgo_search import DDGS
+import matplotlib.pyplot as plt
 
 # Load environment variables
 load_dotenv()
