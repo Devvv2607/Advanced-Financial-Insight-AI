@@ -3,7 +3,7 @@ import plotly
 import yfinance as yf
 import pandas as pd
 import plotly.graph_objs as plt
-from groq import Groq
+# Replaced Groq client with Gemini API key usage
 import os
 from dotenv import load_dotenv
 from duckduckgo_search import DDGS
@@ -18,19 +18,16 @@ st.set_page_config(
     layout="wide"
 )
 
-# Initialize Groq Client
-def get_groq_client():
+# Initialize Gemini API key
+def get_gemini_key():
     try:
-        # Try to get API key from environment variables
-        groq_api_key = os.getenv("GROQ_API_KEY")
-        
-        if not groq_api_key:
-            st.error("Groq API Key is missing. Please set GROQ_API_KEY in your .env file.")
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        if not gemini_api_key:
+            st.error("Gemini API Key is missing. Please set GEMINI_API_KEY in your .env file.")
             return None
-        
-        return Groq(api_key=groq_api_key)
+        return gemini_api_key
     except Exception as e:
-        st.error(f"Error initializing Groq client: {e}")
+        st.error(f"Error retrieving Gemini API key: {e}")
         return None
 
 # Fetch Stock Information
@@ -151,9 +148,9 @@ def get_duckduckgo_news(symbol, limit=5):
 
 # Generate AI Analysis
 def generate_ai_analysis(stock_info, news, query_type):
-    client = get_groq_client()
-    if not client:
-        return "Unable to generate AI analysis due to client initialization error."
+    api_key = get_gemini_key()
+    if not api_key:
+        return "Unable to generate AI analysis due to missing GEMINI_API_KEY."
     
     try:
         # Prepare context for AI
@@ -178,16 +175,14 @@ def generate_ai_analysis(stock_info, news, query_type):
         else:
             prompt = f"Generate a detailed financial and news-based analysis:\n{full_context}"
         
-        # Generate response using Groq
-        response = client.chat.completions.create(
-            model="llama3-70b-8192",
-            messages=[
-                {"role": "system", "content": "You are a professional financial analyst providing nuanced stock insights."},
-                {"role": "user", "content": prompt}
-            ]
+        # NOTE: Gemini integration placeholder
+        # The API key is available in `api_key`. Replace this block with
+        # actual Gemini SDK/HTTP call to generate a model response.
+        placeholder_response = (
+            "Gemini API key detected. Prompt prepared for model:\n\n" + prompt +
+            "\n\n(Integrate Gemini SDK or REST call here to send the prompt to the Gemini model and return its output.)"
         )
-        
-        return response.choices[0].message.content
+        return placeholder_response
     except Exception as e:
         return f"Error generating AI analysis: {e}"
 
